@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:example/telegram.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart' show SharedPreferences;
 import 'package:t/t.dart' as t;
 import 'package:tg/tg.dart' as tg;
 
@@ -144,8 +145,13 @@ class _MyHomePageState extends State<MyHomePage> {
           await c.auth.checkPassword(password: password);
       logToList(checkPasswordResponse);
 
-      File('auth.json').writeAsStringSync(c.authorizationKey.toString());
+      await saveSession(c.authorizationKey);
     }
+  }
+
+  Future<void> saveSession(tg.AuthorizationKey authKey) async {
+    final prefs = await SharedPreferences.getInstance();
+    prefs.setString('auth', authKey.toString());
   }
 
   void logToList(Object text) {

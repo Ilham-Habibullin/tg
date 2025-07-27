@@ -1,11 +1,13 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
-import 'package:example/io_socket.dart';
+import 'dart:convert' show jsonDecode;
+import 'dart:io' show InternetAddress;
+import 'package:example/io_socket.dart' show IoSocket;
+import 'package:shared_preferences/shared_preferences.dart' show SharedPreferences;
+import 'package:socks5_proxy/socks_client.dart' show ProxySettings, SocksTCPClient;
+import 'package:example/session_info_manager.dart' show SessionInfoManager;
+
 import 'package:t/t.dart' as t;
 import 'package:tg/tg.dart' as tg;
-import 'package:socks5_proxy/socks_client.dart';
-import 'package:example/session_info_manager.dart' show SessionInfoManager;
 
 const apiId = 611335;
 const apiHash = 'd524b414d21f4d37f08684c1df41ac9c';
@@ -59,24 +61,27 @@ class Telegram {
   }
 
   Future<tg.Client> connect() async {
-    final cc = _c;
-    if (cc != null) {
-      return cc;
+    final currentClient = _c;
+    if (currentClient != null) {
+      return currentClient;
     }
+
     _log('Connecting...');
     final socket = await _createSocket(_dc.ipAddress, _dc.port);
 
     _log('Connected.');
     final obfuscation = tg.Obfuscation.random(false, _dc.id);
-    
+
 
     await socket.send(obfuscation.preamble);
 
-    final loadedAuthKey = loadSession();
+    final loadedAuthKey = await loadSession();
     var lastSentMessageId = 0, seqno = 0;
 
     if (loadedAuthKey != null) {
-      final sessionInfoManager = SessionInfoManager(authorizationKey: loadedAuthKey);
+      final sessionInfoManager = SessionInfoManager(authorizationKey: loadedAuthKey, dropClient: () {
+        _c = null;
+      });
       (lastSentMessageId, seqno) = await sessionInfoManager.getSeqno(authorizationKey: loadedAuthKey);
     }
 
@@ -92,7 +97,9 @@ class Telegram {
           idGenerator,
         );
 
-    final sessionInfoManager = SessionInfoManager(authorizationKey: authKey);
+    final sessionInfoManager = SessionInfoManager(authorizationKey: authKey, dropClient: () {
+      _c = null;
+    });
 
     final client = tg.Client(
       socket: socket,
@@ -130,9 +137,16 @@ class Telegram {
   }
 }
 
-tg.AuthorizationKey? loadSession() {
+Future<tg.AuthorizationKey?> loadSession() async {
   try {
-    final text = File('auth.json').readAsStringSync();
+    final prefs = await SharedPreferences.getInstance();
+
+    final text = prefs.getString('auth');
+
+    if (text == null) {
+      return null;
+    }
+
     final jsn = jsonDecode(text);
 
     return tg.AuthorizationKey.fromJson(jsn);

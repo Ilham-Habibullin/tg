@@ -61,6 +61,10 @@ class Client extends t.Client {
   Stream<UpdatesBase> get stream => _streamController.stream;
 
   void _handleIncomingMessage(TlObject msg) {
+    if (msg is BadServerSalt) {
+      sessionInfoManager?.updateServerSalt(msg);
+    }
+
     if (msg is UpdatesBase) {
       _streamController.add(msg);
     }
