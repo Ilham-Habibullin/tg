@@ -5,7 +5,7 @@ class Client extends t.Client {
     required this.socket,
     required this.obfuscation,
     required this.authorizationKey,
-    required this.idGenerator,
+    required this.idGenerator,    
     this.sessionInfoManager,
   }) {
     _transformer = _EncryptedTransformer(
@@ -60,16 +60,24 @@ class Client extends t.Client {
 
   Stream<UpdatesBase> get stream => _streamController.stream;
 
+  final _invokesLog = <int, t.TlMethod>{};
+
   void _handleIncomingMessage(TlObject msg) {
     if (msg is BadServerSalt) {
-      sessionInfoManager?.updateServerSalt(msg);
+      final task = _pending[msg.badMsgId];
+      final method = _invokesLog[msg.badMsgId];
+
+      if (task == null || method == null) {
+        throw Exception('Task or method not found');
+      }
+
+      sessionInfoManager?.updateServerSalt(msg, task, method);
     }
 
     if (msg is UpdatesBase) {
       _streamController.add(msg);
     }
 
-    //
     if (msg is MsgContainer) {
       for (final message in msg.messages) {
         _handleIncomingMessage(message);
@@ -111,7 +119,13 @@ class Client extends t.Client {
       final gZippedData = GZipDecoder().decodeBytes(msg.packedData);
       final newObj = BinaryReader(Uint8List.fromList(gZippedData)).readObject();
       _handleIncomingMessage(newObj);
-    }
+    } 
+  }
+
+  Future<void> reattemptInvoke(int msgId, t.TlMethod method, Completer<t.Result> completer) async {
+    final result = await invoke(method);
+
+    completer.complete(result);
   }
 
   @override
@@ -153,7 +167,9 @@ class Client extends t.Client {
       //return invoke(container, false);
     }
 
+    _invokesLog[m.id] = method;
     _pending[m.id] = completer;
+
     final buffer = authorizationKey.id == 0
         ? _encodeNoAuth(method, m)
         : _encodeWithAuth(method, m, 10, authorizationKey);
