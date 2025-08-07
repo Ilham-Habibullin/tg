@@ -29,7 +29,21 @@ Future<tg.SocketAbstraction> _createSocket(String ip, int port) async {
   return IoSocket(socket);
 }
 
+class LastInvoke {
+  LastInvoke({
+    required this.msgId,
+    required this.completer,
+    required this.method,
+  });
+
+  final int msgId;
+  final Completer<t.Result> completer;
+  final t.TlMethod method;
+}
+
 class Telegram {
+  LastInvoke? lastInvoke;
+
   Telegram._();
   static final Telegram instance = Telegram._();
 
@@ -79,9 +93,19 @@ class Telegram {
     var lastSentMessageId = 0, seqno = 0;
 
     if (loadedAuthKey != null) {
-      final sessionInfoManager = SessionInfoManager(authorizationKey: loadedAuthKey, dropClient: () {
-        _c = null;
-      });
+      final sessionInfoManager = SessionInfoManager(
+        authorizationKey: loadedAuthKey,
+        preserveLasInvokeAnddropClient: (msgId, completer, method) {
+          lastInvoke = LastInvoke(
+            msgId: msgId,
+            completer: completer,
+            method: method,
+          );
+          
+          _c = null;
+        },
+      );
+
       (lastSentMessageId, seqno) = await sessionInfoManager.getSeqno(authorizationKey: loadedAuthKey);
     }
 
@@ -97,9 +121,18 @@ class Telegram {
           idGenerator,
         );
 
-    final sessionInfoManager = SessionInfoManager(authorizationKey: authKey, dropClient: () {
-      _c = null;
-    });
+    final sessionInfoManager = SessionInfoManager(
+      authorizationKey: authKey,
+      preserveLasInvokeAnddropClient: (msgId, completer, method) {
+        lastInvoke = LastInvoke(
+          msgId: msgId,
+          completer: completer,
+          method: method,
+        );
+        
+        _c = null;
+      },
+    );
 
     final client = tg.Client(
       socket: socket,
@@ -126,6 +159,10 @@ class Telegram {
       langCode: 'en',
       query: const t.HelpGetConfig(),
     );
+
+    if (lastInvoke != null) {
+      client.reattemptInvoke(lastInvoke!.msgId, lastInvoke!.method, lastInvoke!.completer);
+    }
 
     dcs.clear();
     dcs.addAll(cfg.result!.dcOptions.map((e) => e as t.DcOption));
