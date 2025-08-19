@@ -7,5 +7,5 @@ abstract class SessionInfoManager {
 
   Future<void> updateSeqno(int id, int seqnoCounter);
 
-  Future<void> updateServerSalt(BadServerSalt msg, Completer<t.Result> completer, t.TlMethod method);
+  Future<void> updateServerSalt(AuthorizationKey newAuthKey);
 }

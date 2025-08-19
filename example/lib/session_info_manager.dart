@@ -1,21 +1,15 @@
-import 'dart:async' show Completer;
-import 'dart:convert' show jsonDecode;
-
 import 'package:shared_preferences/shared_preferences.dart' show SharedPreferences;
 import 'package:tg/tg.dart' as tg;
-import 'package:t/t.dart' as t;
 
 class SessionInfoManager extends tg.SessionInfoManager {
 
   SessionInfoManager({
     required tg.AuthorizationKey authorizationKey,
-    required this.preserveLasInvokeAnddropClient,
   }) : super(authorizationKey: authorizationKey) {
     prefKey = '${authorizationKey.id}-${authorizationKey.key.join()}';
   }
 
   late final String prefKey;
-  final void Function(int msgId, Completer<t.Result> completer, t.TlMethod method) preserveLasInvokeAnddropClient;
 
   @override
   Future<void> updateSeqno(int id, int seqnoCounter) async {
@@ -37,29 +31,10 @@ class SessionInfoManager extends tg.SessionInfoManager {
 
   @override
   Future<void> updateServerSalt(
-    t.BadServerSalt msg,
-    Completer<t.Result> completer,
-    t.TlMethod method,
+    tg.AuthorizationKey newAuthKey,
   ) async {
     final prefs = await SharedPreferences.getInstance();
 
-    final authKey = prefs.getString('auth');
-
-    if (authKey == null) {
-      return;
-    }
-
-    final authKeyJson = jsonDecode(authKey);
-    final authKeyObj = tg.AuthorizationKey.fromJson(authKeyJson);
-
-    final newAuthKey = tg.AuthorizationKey(
-      authKeyObj.id,
-      authKeyObj.key,
-      msg.newServerSalt,
-    );
-
     prefs.setString('auth', newAuthKey.toString());
-
-    preserveLasInvokeAnddropClient(msg.badMsgId, completer, method);
   }
 }

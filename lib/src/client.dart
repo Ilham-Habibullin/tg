@@ -62,16 +62,39 @@ class Client extends t.Client {
 
   final _invokesLog = <int, t.TlMethod>{};
 
+  void _updateServerSalt(int newSalt) {
+    authorizationKey.salt = newSalt;
+  }
+
+  void _clearQueueItems(int msgId) {
+    _pending.remove(msgId);
+    _invokesLog.remove(msgId);
+  }
+
+  Future<void> _reattemptInvoke(int msgId, t.TlMethod tlMethod, Completer<t.Result> completer) async {
+    final result = await invoke(tlMethod);
+
+    completer.complete(result);
+    _clearQueueItems(msgId);
+  }
+
   void _handleIncomingMessage(TlObject msg) {
     if (msg is BadServerSalt) {
-      final task = _pending[msg.badMsgId];
-      final method = _invokesLog[msg.badMsgId];
+      final completer = _pending[msg.badMsgId];
+      final tlMethod = _invokesLog[msg.badMsgId];
 
-      if (task == null || method == null) {
+      if (completer == null || tlMethod == null) {
         throw Exception('Task or method not found');
       }
 
-      sessionInfoManager?.updateServerSalt(msg, task, method);
+      _updateServerSalt(msg.newServerSalt);
+
+      if (sessionInfoManager != null) {
+        sessionInfoManager!.updateServerSalt(authorizationKey);
+      }
+
+      _reattemptInvoke(msg.badMsgId, tlMethod, completer);
+      return;
     }
 
     if (msg is UpdatesBase) {
@@ -91,7 +114,9 @@ class Client extends t.Client {
       final badMsgId = msg.badMsgId;
       final task = _pending[badMsgId];
       task?.completeError(BadMessageException._(msg));
-      _pending.remove(badMsgId);
+      _clearQueueItems(badMsgId);
+
+
     } else if (msg is RpcResult) {
       final reqMsgId = msg.reqMsgId;
       final task = _pending[reqMsgId];
@@ -100,7 +125,9 @@ class Client extends t.Client {
 
       if (result is RpcError) {
         task?.complete(t.Result.error(result));
-        _pending.remove(reqMsgId);
+        _clearQueueItems(reqMsgId);
+
+
         return;
       } else if (result is GzipPacked) {
         final gZippedData = GZipDecoder().decodeBytes(result.packedData);
@@ -114,18 +141,14 @@ class Client extends t.Client {
       }
 
       task?.complete(t.Result.ok(msg.result));
-      _pending.remove(reqMsgId);
+      _clearQueueItems(reqMsgId);
+
+
     } else if (msg is GzipPacked) {
       final gZippedData = GZipDecoder().decodeBytes(msg.packedData);
       final newObj = BinaryReader(Uint8List.fromList(gZippedData)).readObject();
       _handleIncomingMessage(newObj);
     } 
-  }
-
-  Future<void> reattemptInvoke(int msgId, t.TlMethod method, Completer<t.Result> completer) async {
-    final result = await invoke(method);
-
-    completer.complete(result);
   }
 
   @override
